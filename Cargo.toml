@@ -4,7 +4,8 @@ version = "0.1.1"
 edition = "2021"
 rust-version = "1.75"
 description = "Audio output and input switching keys for OpenLinkHub Nexus Decks, OpenDeck and Stream Deck"
-repository = "https://github.com/avonderau/openaction-audioswitcher"
+repository = "https://github.com/avonderau/OpenAction-AudioSwitcher"
+license = "MIT"
 publish = false
 
 [dependencies]
