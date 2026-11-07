@@ -120,6 +120,10 @@ python3 scripts/make-icons.py
 
 The tests include audio handling with a fake `pactl` command and plugin behavior with a fake Deck host.
 
+## License
+
+Audio Switcher is available under the [MIT License](LICENSE). You're welcome to use, modify, and share it; just keep the copyright and license notice with any copies.
+
 ## Troubleshooting
 
 If the plugin can't see your devices, try `pactl info` in a terminal as the same user running the plugin. If that can't reach your audio server, the plugin can't either.
