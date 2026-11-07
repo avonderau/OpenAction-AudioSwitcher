@@ -70,24 +70,110 @@ pub fn selected(settings: &Value) -> Vec<String> {
     names
 }
 
-/// What a key shows for a device: its label from the key settings, else
-/// the device description, else the raw name.
-fn label(kind: Kind, audio: &AudioState, settings: &Value, name: &str) -> String {
-    let custom = settings
-        .get("labels")
-        .and_then(|l| l.get(name))
+/// A device name with its number parts (USB interface, serial, the ".2"
+/// PipeWire adds to a duplicate) blanked out, so the same device matches
+/// after it was plugged back in under a slightly different name.
+pub fn fingerprint(name: &str) -> String {
+    let chars: Vec<char> = name.to_lowercase().chars().collect();
+    let sep = |c: char| matches!(c, '-' | '.' | '_');
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_digit() && (i == 0 || sep(chars[i - 1])) {
+            let end = (i..chars.len())
+                .find(|&j| !chars[j].is_ascii_digit())
+                .unwrap_or(chars.len());
+            if end == chars.len() || sep(chars[end]) {
+                out.push('#');
+                i = end;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    while let Some(rest) = out.strip_suffix(".#") {
+        out.truncate(rest.len());
+    }
+    out
+}
+
+fn text<'a>(settings: &'a Value, map: &str, name: &str) -> &'a str {
+    settings
+        .get(map)
+        .and_then(|m| m.get(name))
         .and_then(Value::as_str)
         .map(str::trim)
-        .unwrap_or("");
+        .unwrap_or("")
+}
+
+/// Each of the key's devices with the connected device it stands for: the
+/// device of that name, or (unless `matchSimilar` is off) a connected
+/// device that looks like the same one under a new name.
+pub fn resolve(kind: Kind, audio: &AudioState, settings: &Value) -> Vec<(String, Option<String>)> {
+    let names = selected(settings);
+    let devices = audio.devices(kind);
+    let similar = settings.get("matchSimilar").and_then(Value::as_bool) != Some(false);
+    let mut taken: Vec<&str> = names
+        .iter()
+        .filter(|n| devices.iter().any(|d| &d.name == *n))
+        .map(String::as_str)
+        .collect();
+    let mut out = Vec::new();
+    for name in &names {
+        if devices.iter().any(|d| &d.name == name) {
+            out.push((name.clone(), Some(name.clone())));
+            continue;
+        }
+        let description = text(settings, "descriptions", name);
+        let print = fingerprint(name);
+        let best = devices
+            .iter()
+            .filter(|_| similar)
+            .filter(|d| !taken.contains(&d.name.as_str()))
+            .filter_map(|d| {
+                let same_print = fingerprint(&d.name) == print;
+                let same_desc = !description.is_empty() && d.description == description;
+                let score = 2 * u8::from(same_print) + u8::from(same_desc);
+                (score > 0).then_some((score, d))
+            })
+            .fold(None::<(u8, &crate::pactl::Device)>, |best, c| match best {
+                Some(b) if b.0 >= c.0 => Some(b),
+                _ => Some(c),
+            })
+            .map(|(_, d)| d);
+        if let Some(d) = best {
+            taken.push(&d.name);
+        }
+        out.push((name.clone(), best.map(|d| d.name.clone())));
+    }
+    out
+}
+
+/// What a key shows for one of its devices: its label from the key
+/// settings, else the description of the device it stands for, else the
+/// saved description, else the raw name.
+fn label(
+    kind: Kind,
+    audio: &AudioState,
+    settings: &Value,
+    saved: &str,
+    device: Option<&str>,
+) -> String {
+    let custom = text(settings, "labels", saved);
     if !custom.is_empty() {
         return custom.to_string();
     }
-    audio
-        .devices(kind)
-        .iter()
-        .find(|d| d.name == name)
-        .map(|d| d.description.clone())
-        .unwrap_or_else(|| name.to_string())
+    if let Some(d) = device.and_then(|n| audio.devices(kind).iter().find(|d| d.name == n)) {
+        return d.description.clone();
+    }
+    let saved_desc = text(settings, "descriptions", saved);
+    if saved_desc.is_empty() {
+        saved
+    } else {
+        saved_desc
+    }
+    .to_string()
 }
 
 /// The title and state a key shows.
@@ -101,26 +187,34 @@ pub fn view(kind: Kind, audio: &AudioState, settings: &Value) -> (String, u8) {
     if let Some(title) = title {
         return (title.into(), 0);
     }
-    let names = selected(settings);
+    let entries = resolve(kind, audio, settings);
     let current = audio.default_device(kind);
-    match names.as_slice() {
+    match entries.as_slice() {
         [] => ("Pick\ndevice".into(), 0),
-        [one] => (
-            fit(&label(kind, audio, settings, one)),
-            u8::from(one == current),
+        [(saved, device)] => (
+            fit(&label(kind, audio, settings, saved, device.as_deref())),
+            u8::from(device.as_deref() == Some(current)),
         ),
-        _ => (
-            fit(&label(kind, audio, settings, current)),
-            u8::from(names.iter().any(|n| n == current)),
-        ),
+        _ => match entries.iter().find(|e| e.1.as_deref() == Some(current)) {
+            Some((saved, device)) => (
+                fit(&label(kind, audio, settings, saved, device.as_deref())),
+                1,
+            ),
+            None => (
+                fit(&label(kind, audio, settings, current, Some(current))),
+                0,
+            ),
+        },
     }
 }
 
 /// The device a press switches to, or None when none of the key's devices
 /// is connected.
 pub fn next_device(kind: Kind, audio: &AudioState, settings: &Value) -> Option<String> {
-    let present = |n: &String| audio.devices(kind).iter().any(|d| &d.name == n);
-    let names: Vec<String> = selected(settings).into_iter().filter(present).collect();
+    let names: Vec<String> = resolve(kind, audio, settings)
+        .into_iter()
+        .filter_map(|e| e.1)
+        .collect();
     let current = audio.default_device(kind);
     let next = match names.iter().position(|n| n == current) {
         Some(i) => (i + 1) % names.len(),
@@ -185,6 +279,9 @@ impl Plugin {
                 if let Some(key) = self.keys.get_mut(&context) {
                     key.settings = settings();
                     self.render(&context);
+                    if self.inspectors.contains_key(&context) {
+                        self.send_devices(&context);
+                    }
                 }
             }
             "keyDown" => self.on_key(&context),
@@ -265,12 +362,25 @@ impl Plugin {
         let Some(kind) = kind_from_uuid(&action) else {
             return;
         };
+        let matches: serde_json::Map<String, Value> = self
+            .keys
+            .get(context)
+            .map(|k| resolve(kind, &self.audio, &k.settings))
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(saved, device)| {
+                device
+                    .filter(|d| *d != saved)
+                    .map(|d| (saved, Value::String(d)))
+            })
+            .collect();
         self.outbox.push(json!({"event": "sendToPropertyInspector", "context": context, "action": action, "payload": {
             "type": "devices",
             "status": self.audio.status,
             "kind": kind,
             "devices": self.audio.devices(kind),
             "current": self.audio.default_device(kind),
+            "matches": matches,
         }}));
     }
 
@@ -401,6 +511,97 @@ mod tests {
             "shows the current device even when it is not in the list"
         );
         assert_eq!(next_device(Kind::Output, &a, &s).as_deref(), Some(HEADSET));
+    }
+
+    #[test]
+    fn fingerprints_ignore_number_parts() {
+        let f = fingerprint;
+        assert_eq!(
+            f("alsa_output.usb-Logitech_G535-00.analog-stereo"),
+            f("alsa_output.usb-Logitech_G535-01.analog-stereo.2")
+        );
+        assert_eq!(
+            f("alsa_input.usb-Generic_USB_Audio_201405280001-00.mono-fallback"),
+            f("alsa_input.usb-Generic_USB_Audio_201405280002-00.mono-fallback")
+        );
+        assert_ne!(
+            f("alsa_output.usb-Logitech_G535-00.analog-stereo"),
+            f("alsa_output.usb-Logitech_G733-00.analog-stereo")
+        );
+        assert_ne!(
+            f("alsa_output.pci.hdmi-stereo"),
+            f("alsa_output.pci.hdmi-stereo-extra1")
+        );
+        assert_ne!(
+            f("alsa_output.headset.analog-stereo"),
+            f("alsa_output.headset.iec958-stereo")
+        );
+    }
+
+    #[test]
+    fn matches_a_device_that_came_back_under_a_new_name() {
+        let mut a = audio();
+        let renamed = "alsa_output.headset.2";
+        a.outputs[1].name = renamed.into();
+        let s = json!({"devices": [HEADSET]});
+        assert_eq!(
+            resolve(Kind::Output, &a, &s),
+            vec![(HEADSET.to_string(), Some(renamed.to_string()))]
+        );
+        assert_eq!(next_device(Kind::Output, &a, &s).as_deref(), Some(renamed));
+        a.default_output = renamed.into();
+        assert_eq!(view(Kind::Output, &a, &s), ("G535\nWireless…".into(), 1));
+
+        let off = json!({"devices": [HEADSET], "matchSimilar": false});
+        assert_eq!(
+            resolve(Kind::Output, &a, &off),
+            vec![(HEADSET.to_string(), None)]
+        );
+        assert_eq!(view(Kind::Output, &a, &off).1, 0);
+
+        // A Bluetooth headset that comes back with a new profile in its
+        // name is matched by the description saved with the key.
+        a.outputs[1].name = "bluez_output.AA_BB.headset-head-unit".into();
+        let bt = json!({"devices": ["bluez_output.AA_BB.a2dp-sink"],
+            "descriptions": {"bluez_output.AA_BB.a2dp-sink": "G535 Wireless Gaming Headset"}});
+        assert_eq!(
+            next_device(Kind::Output, &a, &bt).as_deref(),
+            Some("bluez_output.AA_BB.headset-head-unit")
+        );
+        assert_eq!(
+            next_device(
+                Kind::Output,
+                &a,
+                &json!({"devices": ["bluez_output.AA_BB.a2dp-sink"]})
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn a_device_is_matched_once_and_exact_names_win() {
+        let mut a = audio();
+        a.outputs.push(Device {
+            name: "alsa_output.headset.3".into(),
+            description: "Other".into(),
+        });
+        // The headset is connected under its own name, so the missing
+        // ".2" entry must not steal it; it gets the ".3" one instead.
+        let s = json!({"devices": [HEADSET, "alsa_output.headset.2"]});
+        assert_eq!(
+            resolve(Kind::Output, &a, &s),
+            vec![
+                (HEADSET.to_string(), Some(HEADSET.to_string())),
+                (
+                    "alsa_output.headset.2".to_string(),
+                    Some("alsa_output.headset.3".to_string())
+                ),
+            ]
+        );
+        let s = json!({"devices": ["alsa_output.headset.2", "alsa_output.headset.4"]});
+        let r = resolve(Kind::Output, &a, &s);
+        assert_eq!(r[0].1.as_deref(), Some(HEADSET));
+        assert_eq!(r[1].1.as_deref(), Some("alsa_output.headset.3"));
     }
 
     #[test]

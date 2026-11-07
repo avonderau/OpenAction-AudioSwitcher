@@ -237,3 +237,25 @@ fn settings_page_gets_the_device_list() {
     h.deck(json!({"event": "didReceiveSettings", "action": INPUT, "context": "k", "payload": {"settings": {"devices": [USB_MIC]}}}));
     assert_eq!((h.title("k").as_str(), h.state("k")), ("Yeti", 1));
 }
+
+#[test]
+fn replugged_device_with_a_new_name_is_matched() {
+    let fake = FakePactl::start();
+    let mut h = Harness::new(&fake.path);
+    h.appear(OUTPUT, "k", json!({"devices": [HEADSET]}));
+    h.until("ready", |h| h.title("k") == "G535\nHeadset");
+
+    let renamed = "alsa_output.usb-Logitech_G535-01.analog-stereo.2";
+    fake.write(
+        "sinks",
+        &format!("{SPEAKERS}|Built-in Audio Analog Stereo\n{renamed}|G535 Headset\n"),
+    );
+    fake.notify();
+    h.deck(json!({"event": "propertyInspectorDidAppear", "action": OUTPUT, "context": "k"}));
+    h.until("page sees the renamed headset", |h| {
+        h.last("sendToPropertyInspector", "k").unwrap()["matches"][HEADSET] == renamed
+    });
+    h.press("k");
+    h.until("renamed headset selected", |h| h.state("k") == 1);
+    assert_eq!(fake.read("default_sink"), renamed);
+}

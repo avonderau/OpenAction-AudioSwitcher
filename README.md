@@ -17,6 +17,16 @@ while it is. Give it **several** and each press moves to the next one that
 is plugged in; the key shows the device in use and lights while it is one
 of the key's devices.
 
+**Find the same device after it is plugged back in** (on by default, per
+key) covers devices that come back under a different name, such as a USB
+headset in another port, PipeWire's `.2` suffix on a re-plugged device, or
+a Bluetooth headset that switched profile. When a saved device is missing,
+the key uses a connected one whose name differs only in its number parts,
+or whose description matches the one saved with the key. A device with its
+exact saved name always wins, and each connected device stands in for at
+most one saved device. Turn it off for keys that must only ever use one
+specific device.
+
 Keys show "Pick device" until you choose one, "No audio server" when
 PulseAudio or PipeWire is not reachable, and "Install pactl" when the
 `pactl` command is missing. A press on a device that is not plugged in
