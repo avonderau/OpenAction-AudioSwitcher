@@ -1,98 +1,123 @@
-# Audio Switcher for OpenDeck
+# Audio Switcher
 
-Deck keys that switch your sound output (speakers, headphones, HDMI) and
-your microphone. The plugin is written for the Deck plugin host in
-[OpenLinkHub Nexus](https://github.com/avonderau/OpenLinkHub-Nexus)
-([docs](https://github.com/avonderau/OpenLinkHub-Nexus/blob/main/docs/deck-plugins.md)).
-It is a standard Stream Deck SDK plugin, so it should also run in OpenDeck
-and the Elgato Stream Deck app on Linux.
+**Switch your speakers, headphones, and microphones right from your Deck.**
 
-| Key | Press | Shows |
-| --- | --- | --- |
-| Output device | Switch to the key's speakers/headphones, or to the next of several | The device; lit while it is in use |
-| Input device | Switch to the key's microphone, or to the next of several | The device; lit while it is in use |
+Audio Switcher is a Linux plugin for Stream Deck-style devices. It's for those times when you want to move from speakers to a headset, or change microphones, without digging through sound settings.
 
-Give a key **one device** and a press makes it the default; the key lights
-while it is. Give it **several** and each press moves to the next one that
-is plugged in; the key shows the device in use and lights while it is one
-of the key's devices.
+I built it for the Deck plugin host in [OpenLinkHub Nexus](https://github.com/avonderau/OpenLinkHub-Nexus). It follows the standard Stream Deck SDK, so it should also run in OpenDeck and the Elgato Stream Deck app on Linux, though those hosts haven't been verified here.
 
-**Find the same device after it is plugged back in** (on by default, per
-key) covers devices that come back under a different name, such as a USB
-headset in another port, PipeWire's `.2` suffix on a re-plugged device, or
-a Bluetooth headset that switched profile. When a saved device is missing,
-the key uses a connected one whose name differs only in its number parts,
-or whose description matches the one saved with the key. A device with its
-exact saved name always wins, and each connected device stands in for at
-most one saved device. Turn it off for keys that must only ever use one
-specific device.
+## What it does
 
-Keys show "Pick device" until you choose one, "No audio server" when
-PulseAudio or PipeWire is not reachable, and "Install pactl" when the
-`pactl` command is missing. A press on a device that is not plugged in
-shows an alert.
+You get two actions to put on your Deck:
 
-## How it works
+- **Output device** switches your default playback device (speakers, headphones, HDMI, and so on).
+- **Input device** switches your default microphone or other recording device.
 
-The plugin runs `pactl`, which talks to PulseAudio, or to PipeWire through
-pipewire-pulse (the default on current Fedora, Ubuntu, Debian and Arch
-desktops). It sets the default sink or source, which is what the desktop
-sound settings change, and keeps `pactl subscribe` running so the keys
-update when you switch devices anywhere else.
+You can dedicate a key to a single device, or put several devices on one key and cycle through them. For example, I can have separate keys for speakers and a headset, or one key that toggles between the two. The active device lights up on the Deck, and the label shows which one is selected.
+
+The plugin also watches for changes made outside the Deck. If you switch your default audio device in Linux settings, your keys update to match.
+
+### What happens when a device disconnects?
+
+Your device choices are saved, even when a headset or microphone is unplugged. When cycling through several devices, the plugin skips ones it can't find.
+
+There's also a **Find the same device after it is plugged back in** option, enabled by default on each key. Some USB and Bluetooth devices come back with a slightly different name after being moved to another port, reconnected, or switched between profiles. This option looks for a match using the device's name or saved description. An exact name match takes priority, and a connected device won't be matched to more than one saved choice.
+
+If you need a key to work only with one exact device, turn that option off.
 
 ## Requirements
 
-- Linux on x86_64 or aarch64, with PulseAudio or PipeWire (pipewire-pulse).
-- `pactl`: the `pulseaudio-utils` package on Debian, Ubuntu and Fedora,
-  `libpulse` on Arch. The plugin itself is a single static binary.
+- Linux on **x86_64** or **aarch64 (ARM64)**.
+- **PulseAudio**, or **PipeWire** with `pipewire-pulse`.
+- The `pactl` command.
+- A compatible Deck plugin host, such as OpenLinkHub Nexus.
 
-## Install
+On Debian and Ubuntu, `pactl` is provided by `pulseaudio-utils`; on Arch, it's in `libpulse`.
 
-1. Download `com.avonderau.audioswitcher.streamDeckPlugin` from the
-   [latest release](https://github.com/avonderau/openaction-audioswitcher/releases/latest),
-   or build it yourself (see below).
-2. In OpenLinkHub, open the Deck editor, go to the **Plugins** tab, choose
-   the file and click **Install plugin**, then confirm on your desktop. Or,
-   as your desktop user:
-
-   ```sh
-   /opt/OpenLinkHub/OpenLinkHub --install-deck-plugin dist/com.avonderau.audioswitcher.streamDeckPlugin
-   ```
-
-3. Put an Audio Switcher action on a key (**Plugin action (experimental)**),
-   **Save & Apply**, then open **Plugin settings**.
-4. Tick the device (or devices) for the key. Ticked devices stay in the
-   list while unplugged, so a headset keeps its place. Fill in **Key label**
-   for a short name; device names are often long.
-
-The plugin must run as your desktop user, since `pactl` talks to the audio
-server of the user that runs it.
-
-## Development
-
-The plugin is written in Rust (stable, 1.75 or later).
+You can check that your desktop audio server is responding with:
 
 ```sh
-cargo test             # unit tests, the worker against a fake pactl, and
-                       # the binary driven through a fake Deck host
-sh scripts/pack.sh     # writes dist/com.avonderau.audioswitcher.streamDeckPlugin
-python3 scripts/make-icons.py   # redraws the key icons (needs Pillow)
+pactl info
+pactl list short sinks
+pactl list short sources
 ```
 
-`scripts/pack.sh` builds static binaries for both architectures and needs
-`rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl`.
-The aarch64 build links with `rust-lld`, which ships with Rust.
+The plugin must run as **your desktop user**, since it needs access to your audio session.
 
-| Path | What it is |
+## Install in OpenLinkHub Nexus
+
+1. Download `com.avonderau.audioswitcher.streamDeckPlugin` from the [latest release](https://github.com/avonderau/OpenAction-AudioSwitcher/releases/latest).
+2. Open the **Deck editor** in OpenLinkHub Nexus, select the **Plugins** tab, choose the downloaded file, and click **Install plugin**. Confirm the installation on your desktop.
+3. Add an Audio Switcher action to a key using **Plugin action (experimental)**, then choose **Save & Apply**.
+4. Open **Plugin settings** and select the device or devices that key should control. Give them shorter labels if their full names are too long for the display.
+
+You can also install the downloaded package from a terminal as your desktop user:
+
+```sh
+/opt/OpenLinkHub/OpenLinkHub --install-deck-plugin /path/to/com.avonderau.audioswitcher.streamDeckPlugin
+```
+
+If you're using another Deck host, follow its own plugin installation instructions.
+
+## How it works
+
+Under the hood, Audio Switcher uses `pactl` to set the system's default audio sink (output) or source (input). It works with PulseAudio and with PipeWire's PulseAudio-compatible service. It also listens for audio changes through `pactl subscribe`, which keeps the buttons in sync.
+
+Changing the default doesn't necessarily move applications you've manually pinned to another device in tools like `pavucontrol`. Those applications may stay where you put them.
+
+If something isn't ready, a key may display:
+
+| Message | What it means |
 | --- | --- |
-| `src/pactl.rs` | `pactl` worker: device lists, defaults, change events |
-| `src/plugin.rs` | Key actions: what each key does and shows |
-| `src/deck.rs` | WebSocket connection to the Deck host |
-| `com.avonderau.audioswitcher.sdPlugin/` | Manifest, icons and settings page |
+| **Pick device** | Select at least one device in the key's settings. |
+| **No audio server** | The plugin can't reach PulseAudio or PipeWire. |
+| **Install pactl** | The `pactl` command is missing. |
 
-## Notes
+A failed switch also produces an alert on the Deck.
 
-- Apps that were pinned to a device (for example in pavucontrol) stay on
-  it; everything else follows the new default.
-- Plugin output goes to
-  `~/.local/state/OpenLinkHub/deck-plugins/logs/com.avonderau.audioswitcher.log`.
+## Build it yourself
+
+Audio Switcher is written in **Rust 1.75+**. Run the tests with:
+
+```sh
+cargo test
+```
+
+To package the plugin for x86_64 and ARM64:
+
+```sh
+rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+sh scripts/pack.sh
+```
+
+The package ends up at `dist/com.avonderau.audioswitcher.streamDeckPlugin`. The ARM64 build uses `rust-lld`, which comes with Rust.
+
+To regenerate the key icons, install Python's Pillow library and run:
+
+```sh
+python3 scripts/make-icons.py
+```
+
+### Project layout
+
+| Path | What you'll find |
+| --- | --- |
+| `src/pactl.rs` | Audio device discovery, switching, and change notifications. |
+| `src/plugin.rs` | Key behavior, labels, and Deck state. |
+| `src/deck.rs` | The WebSocket connection to the Deck host. |
+| `com.avonderau.audioswitcher.sdPlugin/` | The plugin manifest, icons, and settings page. |
+| `scripts/pack.sh` | The release packaging script. |
+
+The tests include audio handling with a fake `pactl` command and plugin behavior with a fake Deck host.
+
+## Troubleshooting
+
+If the plugin can't see your devices, try `pactl info` in a terminal as the same user running the plugin. If that can't reach your audio server, the plugin can't either.
+
+For OpenLinkHub Nexus, plugin logs are written to:
+
+```text
+~/.local/state/OpenLinkHub/deck-plugins/logs/com.avonderau.audioswitcher.log
+```
+
+For more on Nexus plugin support, see the [Deck plugin documentation](https://github.com/avonderau/OpenLinkHub-Nexus/blob/main/docs/deck-plugins.md).
