@@ -39,6 +39,20 @@
     return Array.isArray(settings.devices) ? settings.devices.filter((d) => typeof d === 'string') : [];
   }
 
+  const ICONS = [
+    ['', 'Default icon'],
+    ['speakers', 'Speakers'],
+    ['headphones', 'Headphones'],
+    ['headset', 'Headset'],
+    ['monitor', 'Monitor / TV'],
+    ['microphone', 'Microphone'],
+    ['webcam', 'Webcam'],
+  ];
+
+  function icons() {
+    return settings.icons && typeof settings.icons === 'object' ? settings.icons : {};
+  }
+
   function labels() {
     return settings.labels && typeof settings.labels === 'object' ? settings.labels : {};
   }
@@ -48,6 +62,7 @@
   function save() {
     const devices = [];
     const names = {};
+    const pictures = {};
     const old = settings.descriptions && typeof settings.descriptions === 'object' ? settings.descriptions : {};
     const descriptions = {};
     const known = new Map(((last && last.devices) || []).map((d) => [d.name, d.description]));
@@ -60,9 +75,12 @@
       }
       const label = li.querySelector('input.label').value.trim();
       if (label) names[name] = label;
+      const icon = li.querySelector('select.icon').value;
+      if (icon) pictures[name] = icon;
     }
     settings.devices = devices;
     settings.labels = names;
+    settings.icons = pictures;
     settings.descriptions = descriptions;
     settings.matchSimilar = $('matchSimilar').checked;
     settings.moveApps = $('moveApps').checked;
@@ -117,7 +135,28 @@
       label.maxLength = 20;
       label.value = labels()[name] || '';
       label.addEventListener('change', save);
-      li.append(box, title, label);
+      const pick = document.createElement('div');
+      pick.className = 'pick';
+      const preview = document.createElement('img');
+      preview.alt = '';
+      const select = document.createElement('select');
+      select.className = 'icon';
+      select.setAttribute('aria-label', 'Key icon');
+      for (const [value, text] of ICONS) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        select.appendChild(opt);
+      }
+      select.value = icons()[name] || '';
+      const showPreview = function () {
+        preview.hidden = !select.value;
+        if (select.value) preview.src = '../imgs/devices/' + select.value + '-on.png';
+      };
+      showPreview();
+      select.addEventListener('change', function () { showPreview(); save(); });
+      pick.append(preview, select);
+      li.append(box, title, label, pick);
       list.appendChild(li);
     }
   }

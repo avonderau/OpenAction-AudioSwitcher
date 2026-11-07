@@ -22,3 +22,6 @@ button { margin-top: 8px; padding: 6px 14px; border: 0; border-radius: 4px; back
 .devices input.label { grid-column: 2; margin-top: 2px; }
 .check { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; }
 .check input { width: auto; margin: 0; }
+.devices .pick { grid-column: 2; display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.devices .pick img { width: 28px; height: 28px; border-radius: 4px; }
+select { flex: 1; padding: 5px 6px; border: 1px solid #555; border-radius: 4px; background: var(--field); color: var(--fg); font: inherit; }
