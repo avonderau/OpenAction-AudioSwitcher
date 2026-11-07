@@ -1,0 +1,3 @@
+# Cross-build the static aarch64 binary with the linker that ships with Rust.
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
