@@ -42,17 +42,28 @@
     return settings.labels && typeof settings.labels === 'object' ? settings.labels : {};
   }
 
+  // Descriptions are saved with the key so a device that comes back
+  // under a new name can still be recognised.
   function save() {
     const devices = [];
     const names = {};
+    const old = settings.descriptions && typeof settings.descriptions === 'object' ? settings.descriptions : {};
+    const descriptions = {};
+    const known = new Map(((last && last.devices) || []).map((d) => [d.name, d.description]));
     for (const li of $('devices').children) {
       const name = li.dataset.name;
-      if (li.querySelector('input[type=checkbox]').checked) devices.push(name);
+      if (li.querySelector('input[type=checkbox]').checked) {
+        devices.push(name);
+        const desc = old[name] || known.get(name) || known.get(((last && last.matches) || {})[name]);
+        if (desc) descriptions[name] = desc;
+      }
       const label = li.querySelector('input.label').value.trim();
       if (label) names[name] = label;
     }
     settings.devices = devices;
     settings.labels = names;
+    settings.descriptions = descriptions;
+    settings.matchSimilar = $('matchSimilar').checked;
     send('setSettings', settings);
   }
 
@@ -63,7 +74,10 @@
     list.textContent = '';
     const known = new Map((p.devices || []).map((d) => [d.name, d.description]));
     const picked = chosen();
-    const rows = picked.concat((p.devices || []).map((d) => d.name).filter((n) => !picked.includes(n)));
+    const matches = p.matches || {};
+    const stood = Object.values(matches);
+    const saved = settings.descriptions || {};
+    const rows = picked.concat((p.devices || []).map((d) => d.name).filter((n) => !picked.includes(n) && !stood.includes(n)));
     for (const name of rows) {
       const li = document.createElement('li');
       li.dataset.name = name;
@@ -73,13 +87,19 @@
       box.addEventListener('change', save);
       const title = document.createElement('label');
       title.className = 'name';
-      title.textContent = known.get(name) || name;
+      title.textContent = known.get(name) || known.get(matches[name]) || saved[name] || name;
       title.title = name;
-      if (name === p.current) {
+      if (name === p.current || (matches[name] && matches[name] === p.current)) {
         const tag = document.createElement('span');
         tag.className = 'current';
         tag.textContent = ' · in use';
         title.appendChild(tag);
+      } else if (matches[name]) {
+        const tag = document.createElement('span');
+        tag.className = 'missing';
+        tag.textContent = ' · found under a new name';
+        title.appendChild(tag);
+        title.title = name + ' → ' + matches[name];
       } else if (!known.has(name)) {
         const tag = document.createElement('span');
         tag.className = 'missing';
@@ -122,6 +142,8 @@
       action = a.action || '';
       settings = (a.payload && a.payload.settings) || {};
     } catch (e) { /* keep defaults */ }
+    $('matchSimilar').checked = settings.matchSimilar !== false;
+    $('matchSimilar').addEventListener('change', save);
     ws = new WebSocket('ws://127.0.0.1:' + port);
     ws.onopen = function () {
       ws.send(JSON.stringify({ event: registerEvent, uuid }));
