@@ -259,3 +259,50 @@ fn replugged_device_with_a_new_name_is_matched() {
     h.until("renamed headset selected", |h| h.state("k") == 1);
     assert_eq!(fake.read("default_sink"), renamed);
 }
+
+#[test]
+fn moving_playing_apps_is_opt_in_and_skips_kept_apps() {
+    let fake = FakePactl::start();
+    fake.write(
+        "sink_inputs",
+        &format!(
+            "90|{SPEAKERS}|FreeRDP|xfreerdp3\n91|{SPEAKERS}|TeamSpeak 3|ts3client_linux_amd64\n92|{HEADSET}|Firefox|firefox\n"
+        ),
+    );
+    let mut h = Harness::new(&fake.path);
+    h.appear(OUTPUT, "plain", json!({"devices": [SPEAKERS, HEADSET]}));
+    h.appear(
+        OUTPUT,
+        "mover",
+        json!({"devices": [SPEAKERS, HEADSET], "moveApps": true}),
+    );
+    h.until("ready", |h| h.state("plain") == 1);
+
+    // Off by default: only the default changes.
+    h.press("plain");
+    h.until("headset", |h| h.title("plain") == "G535\nHeadset");
+    assert!(fake
+        .read("sink_inputs")
+        .starts_with(&format!("90|{SPEAKERS}|")));
+
+    // Back to the speakers, moving what plays on the headset (Firefox).
+    h.press("mover");
+    h.until("speakers", |h| h.title("mover") == "Built-in\nAudio…");
+    assert_eq!(
+        fake.read("sink_inputs"),
+        format!(
+            "90|{SPEAKERS}|FreeRDP|xfreerdp3\n91|{SPEAKERS}|TeamSpeak 3|ts3client_linux_amd64\n92|{SPEAKERS}|Firefox|firefox\n"
+        )
+    );
+
+    // To the headset: FreeRDP and Firefox move, TeamSpeak is on the
+    // default never-move list and stays.
+    h.press("mover");
+    h.until("headset again", |h| h.title("mover") == "G535\nHeadset");
+    assert_eq!(
+        fake.read("sink_inputs"),
+        format!(
+            "90|{HEADSET}|FreeRDP|xfreerdp3\n91|{SPEAKERS}|TeamSpeak 3|ts3client_linux_amd64\n92|{HEADSET}|Firefox|firefox\n"
+        )
+    );
+}

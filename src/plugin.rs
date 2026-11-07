@@ -223,6 +223,26 @@ pub fn next_device(kind: Kind, audio: &AudioState, settings: &Value) -> Option<S
     names.into_iter().nth(next)
 }
 
+/// Apps that are never moved unless the key's list says otherwise:
+/// voice and meeting apps usually pick their own devices.
+pub const DEFAULT_KEEP: &str = "TeamSpeak, Zoom, Discord";
+
+/// Whether a press also moves playing apps (off unless `moveApps` is
+/// set), and the never-move list from `keepApps`.
+pub fn move_settings(settings: &Value) -> (bool, Vec<String>) {
+    let move_apps = settings.get("moveApps").and_then(Value::as_bool) == Some(true);
+    let keep = settings
+        .get("keepApps")
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_KEEP)
+        .split([',', '\n'])
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .map(str::to_string)
+        .collect();
+    (move_apps, keep)
+}
+
 struct Key {
     kind: Kind,
     settings: Value,
@@ -352,7 +372,18 @@ impl Plugin {
             None
         };
         match next {
-            Some(name) => self.request(Command::SetDefault { kind, name }, Some(context)),
+            Some(name) => {
+                let (move_apps, keep) = move_settings(&key.settings);
+                self.request(
+                    Command::SetDefault {
+                        kind,
+                        name,
+                        move_apps,
+                        keep,
+                    },
+                    Some(context),
+                )
+            }
             None => self.alert(context),
         }
     }
@@ -602,6 +633,19 @@ mod tests {
         let r = resolve(Kind::Output, &a, &s);
         assert_eq!(r[0].1.as_deref(), Some(HEADSET));
         assert_eq!(r[1].1.as_deref(), Some("alsa_output.headset.3"));
+    }
+
+    #[test]
+    fn moving_apps_is_off_by_default() {
+        let (on, keep) = move_settings(&json!({}));
+        assert!(!on);
+        assert_eq!(keep, vec!["TeamSpeak", "Zoom", "Discord"]);
+        let (on, keep) = move_settings(&json!({"moveApps": true, "keepApps": "obs,\n  Mumble , "}));
+        assert!(on);
+        assert_eq!(keep, vec!["obs", "Mumble"]);
+        assert!(move_settings(&json!({"moveApps": true, "keepApps": ""}))
+            .1
+            .is_empty());
     }
 
     #[test]

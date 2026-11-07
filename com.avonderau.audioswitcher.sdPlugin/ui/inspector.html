@@ -12,6 +12,13 @@
   <p id="status" class="status">Checking…</p>
   <ul id="devices" class="devices"></ul>
   <label class="check"><input id="matchSimilar" type="checkbox" checked> Find the same device after it is plugged back in, even if its name changed</label>
+  <label class="check"><input id="moveApps" type="checkbox"> Also move apps that are playing on the old device</label>
+  <div id="keepBox" hidden>
+    <label>Never move these apps
+      <input id="keepApps" placeholder="TeamSpeak, Zoom, Discord">
+    </label>
+    <p class="hint">Comma-separated parts of app names. Apps set to a specific device, like voice and meeting apps, are best left here. Apps on other devices are never moved.</p>
+  </div>
   <p class="hint">Tick one device to switch to it, or several to cycle through them in this order. The label is what the key shows; leave it empty to use the device name.</p>
   <button id="refresh" type="button">Refresh list</button>
 </section>
