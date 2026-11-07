@@ -1,0 +1,4 @@
+dist/
+target/
+com.avonderau.audioswitcher.sdPlugin/bin/
+.DS_Store

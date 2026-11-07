@@ -1,0 +1,19 @@
+[package]
+name = "audioswitcher"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Audio output and input switching keys for OpenLinkHub Nexus Decks, OpenDeck and Stream Deck"
+repository = "https://github.com/avonderau/openaction-audioswitcher"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "s"
