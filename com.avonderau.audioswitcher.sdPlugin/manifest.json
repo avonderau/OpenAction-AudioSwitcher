@@ -1,0 +1,62 @@
+{
+  "UUID": "com.avonderau.audioswitcher",
+  "Name": "Audio Switcher",
+  "Version": "0.1.0.0",
+  "Author": "avonderau",
+  "Description": "Switch your sound output and microphone from your Deck: pick one device per key, or cycle through several. Works with PulseAudio and PipeWire through pactl.",
+  "URL": "https://github.com/avonderau/openaction-audioswitcher",
+  "Icon": "imgs/plugin",
+  "Category": "Audio Switcher",
+  "CategoryIcon": "imgs/plugin",
+  "CodePathLin": "bin/x86_64-unknown-linux-gnu/audioswitcher",
+  "CodePaths": {
+    "x86_64-unknown-linux-gnu": "bin/x86_64-unknown-linux-gnu/audioswitcher",
+    "aarch64-unknown-linux-gnu": "bin/aarch64-unknown-linux-gnu/audioswitcher"
+  },
+  "PropertyInspectorPath": "ui/inspector.html",
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.4"
+  },
+  "Actions": [
+    {
+      "UUID": "com.avonderau.audioswitcher.output",
+      "Name": "Output device",
+      "Tooltip": "Switch speakers or headphones: one device, or cycle through several",
+      "Icon": "imgs/output-off",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/output-off"
+        },
+        {
+          "Image": "imgs/output-on"
+        }
+      ]
+    },
+    {
+      "UUID": "com.avonderau.audioswitcher.input",
+      "Name": "Input device",
+      "Tooltip": "Switch microphones: one device, or cycle through several",
+      "Icon": "imgs/input-off",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/input-off"
+        },
+        {
+          "Image": "imgs/input-on"
+        }
+      ]
+    }
+  ],
+  "OS": [
+    {
+      "Platform": "linux"
+    }
+  ]
+}
