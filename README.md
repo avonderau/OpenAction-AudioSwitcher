@@ -6,6 +6,8 @@ Audio Switcher is a Linux plugin for Stream Deck-style devices. It's for those t
 
 I built it for the Deck plugin host in [OpenLinkHub Nexus](https://github.com/avonderau/OpenLinkHub-Nexus). It follows the standard Stream Deck SDK, so it should also run in OpenDeck and the Elgato Stream Deck app on Linux, though those hosts haven't been verified here.
 
+**Independent project:** Audio Switcher is not part of [OpenActionAPI](https://github.com/OpenActionAPI) and is not affiliated with, maintained by, or endorsed by the OpenActionAPI project. The similar naming does not indicate an official connection.
+
 ## What it does
 
 You get two actions to put on your Deck:
