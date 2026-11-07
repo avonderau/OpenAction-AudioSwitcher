@@ -25,6 +25,10 @@ There's also a **Find the same device after it is plugged back in** option, enab
 
 If you need a key to work only with one exact device, turn that option off.
 
+### Can a key show what kind of device it is?
+
+Yes. In the key's settings, each device has an icon picker: speakers, headphones, headset, monitor/TV, microphone, or webcam. The key shows the icon for the device it's switching to. On a key that cycles through several devices, the icon changes to match whichever device is in use. The icon is grey when the device isn't active and green when it is. Leave it on **Default icon** to keep the plugin's standard speaker or microphone image.
+
 ### What about apps that are already playing?
 
 By default, a key only changes the system default device. Apps set to "Default" follow it, and apps you've pointed at a specific device (like TeamSpeak or Zoom) stay where they are.

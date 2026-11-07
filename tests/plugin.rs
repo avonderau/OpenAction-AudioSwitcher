@@ -306,3 +306,42 @@ fn moving_playing_apps_is_opt_in_and_skips_kept_apps() {
         )
     );
 }
+
+#[test]
+fn keys_show_the_icon_picked_for_their_device() {
+    let fake = FakePactl::start();
+    let mut h = Harness::new(&fake.path);
+    let images = |h: &Harness, ctx: &str| {
+        h.sent
+            .iter()
+            .filter(|m| m["event"] == "setImage" && m["context"] == ctx)
+            .map(|m| m["payload"]["image"].as_str().unwrap_or("").to_string())
+            .collect::<Vec<_>>()
+    };
+    h.appear(OUTPUT, "plain", json!({"devices": [HEADSET]}));
+    h.appear(
+        OUTPUT,
+        "k",
+        json!({"devices": [SPEAKERS, HEADSET], "icons": {HEADSET: "headset"}}),
+    );
+    h.until("ready", |h| h.state("k") == 1);
+    assert!(
+        images(&h, "k").is_empty(),
+        "the speakers have no icon picked"
+    );
+
+    h.press("k");
+    h.until("headset", |h| h.title("k") == "G535\nHeadset");
+    let shown = images(&h, "k");
+    assert_eq!(shown.len(), 1);
+    assert!(shown[0].starts_with("data:image/png;base64,iVBOR"));
+
+    h.press("k");
+    h.until("speakers", |h| h.title("k") == "Built-in\nAudio…");
+    assert_eq!(
+        images(&h, "k").last().map(String::as_str),
+        Some(""),
+        "back to the manifest images"
+    );
+    assert!(images(&h, "plain").is_empty());
+}

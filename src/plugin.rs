@@ -223,6 +223,88 @@ pub fn next_device(kind: Kind, audio: &AudioState, settings: &Value) -> Option<S
     names.into_iter().nth(next)
 }
 
+/// The device icons a key can show, drawn by scripts/make-icons.py.
+pub const ICONS: [&str; 6] = [
+    "speakers",
+    "headphones",
+    "headset",
+    "monitor",
+    "microphone",
+    "webcam",
+];
+
+macro_rules! device_png {
+    ($name:literal, $state:literal) => {
+        include_bytes!(concat!(
+            "../com.avonderau.audioswitcher.sdPlugin/imgs/devices/",
+            $name,
+            "-",
+            $state,
+            ".png"
+        ))
+    };
+}
+
+fn icon_png(icon: &str, on: bool) -> Option<&'static [u8]> {
+    let (off, lit): (&[u8], &[u8]) = match icon {
+        "speakers" => (
+            device_png!("speakers", "off"),
+            device_png!("speakers", "on"),
+        ),
+        "headphones" => (
+            device_png!("headphones", "off"),
+            device_png!("headphones", "on"),
+        ),
+        "headset" => (device_png!("headset", "off"), device_png!("headset", "on")),
+        "monitor" => (device_png!("monitor", "off"), device_png!("monitor", "on")),
+        "microphone" => (
+            device_png!("microphone", "off"),
+            device_png!("microphone", "on"),
+        ),
+        "webcam" => (device_png!("webcam", "off"), device_png!("webcam", "on")),
+        _ => return None,
+    };
+    Some(if on { lit } else { off })
+}
+
+/// Standard base64, for the data URLs `setImage` takes.
+pub fn base64(bytes: &[u8]) -> String {
+    const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = u32::from(b[0]) << 16 | u32::from(b[1]) << 8 | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(char::from(ABC[(n >> (18 - 6 * i)) as usize & 63]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// The icon picked for the device the key shows, if any: the key's one
+/// device, or with several, the one in use.
+pub fn icon(kind: Kind, audio: &AudioState, settings: &Value) -> Option<&'static str> {
+    if audio.status != Status::Ready {
+        return None;
+    }
+    let entries = resolve(kind, audio, settings);
+    let current = audio.default_device(kind);
+    let saved = match entries.as_slice() {
+        [(saved, _)] => saved,
+        _ => &entries.iter().find(|e| e.1.as_deref() == Some(current))?.0,
+    };
+    let picked = text(settings, "icons", saved);
+    ICONS.into_iter().find(|i| *i == picked)
+}
+
 /// Apps that are never moved unless the key's list says otherwise:
 /// voice and meeting apps usually pick their own devices.
 pub const DEFAULT_KEEP: &str = "TeamSpeak, Zoom, Discord";
@@ -247,6 +329,8 @@ struct Key {
     kind: Kind,
     settings: Value,
     shown: Option<(String, u8)>,
+    /// The custom icon last set on the key, and the state it was drawn for.
+    image: Option<(&'static str, u8)>,
 }
 
 pub struct Plugin {
@@ -288,6 +372,7 @@ impl Plugin {
                     kind,
                     settings: settings(),
                     shown: None,
+                    image: None,
                 };
                 self.keys.insert(context.clone(), key);
                 self.render(&context);
@@ -437,6 +522,19 @@ impl Plugin {
             );
         }
         key.shown = Some((title, state));
+        // Without a picked icon the key uses the manifest's state images.
+        let image = icon(key.kind, &self.audio, &key.settings).map(|i| (i, state));
+        if image != key.image {
+            let payload = match image.and_then(|(i, s)| icon_png(i, s == 1)) {
+                Some(png) => {
+                    json!({"image": format!("data:image/png;base64,{}", base64(png)), "target": 0})
+                }
+                None => json!({"target": 0}),
+            };
+            self.outbox
+                .push(json!({"event": "setImage", "context": context, "payload": payload}));
+            key.image = image;
+        }
     }
 }
 
@@ -646,6 +744,53 @@ mod tests {
         assert!(move_settings(&json!({"moveApps": true, "keepApps": ""}))
             .1
             .is_empty());
+    }
+
+    #[test]
+    fn encodes_base64() {
+        for (raw, enc) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foobar", "Zm9vYmFy"),
+        ] {
+            assert_eq!(base64(raw.as_bytes()), enc);
+        }
+        for i in ICONS {
+            assert!(icon_png(i, true).unwrap().starts_with(b"\x89PNG"));
+            assert!(icon_png(i, false).is_some());
+        }
+        assert_eq!(icon_png("toaster", true), None);
+    }
+
+    #[test]
+    fn picks_the_icon_of_the_device_shown() {
+        let mut a = audio();
+        let icons = json!({SPEAKERS: "speakers", HEADSET: "headset", HDMI: "toaster"});
+        let one = json!({"devices": [HEADSET], "icons": icons});
+        assert_eq!(icon(Kind::Output, &a, &one), Some("headset"));
+        let cycle = json!({"devices": [SPEAKERS, HEADSET, HDMI], "icons": icons});
+        assert_eq!(icon(Kind::Output, &a, &cycle), Some("speakers"));
+        a.default_output = HEADSET.into();
+        assert_eq!(icon(Kind::Output, &a, &cycle), Some("headset"));
+        a.default_output = HDMI.into();
+        assert_eq!(
+            icon(Kind::Output, &a, &cycle),
+            None,
+            "unknown icon names are ignored"
+        );
+        a.default_output = "alsa_output.other".into();
+        assert_eq!(icon(Kind::Output, &a, &cycle), None);
+        assert_eq!(icon(Kind::Output, &a, &json!({"devices": [HEADSET]})), None);
+        assert_eq!(
+            icon(
+                Kind::Output,
+                &AudioState::with_status(Status::NoServer),
+                &one
+            ),
+            None
+        );
     }
 
     #[test]
