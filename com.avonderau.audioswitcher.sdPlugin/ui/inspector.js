@@ -8,6 +8,7 @@
     nopactl: ['pactl is not installed. Install pulseaudio-utils (Debian, Ubuntu, Fedora) or libpulse (Arch).', 'bad'],
   };
 
+  const DEFAULT_KEEP = 'TeamSpeak, Zoom, Discord';
   let ws = null;
   let uuid = '';
   let action = '';
@@ -64,6 +65,9 @@
     settings.labels = names;
     settings.descriptions = descriptions;
     settings.matchSimilar = $('matchSimilar').checked;
+    settings.moveApps = $('moveApps').checked;
+    settings.keepApps = $('keepApps').value;
+    $('keepBox').hidden = !settings.moveApps;
     send('setSettings', settings);
   }
 
@@ -144,6 +148,11 @@
     } catch (e) { /* keep defaults */ }
     $('matchSimilar').checked = settings.matchSimilar !== false;
     $('matchSimilar').addEventListener('change', save);
+    $('moveApps').checked = settings.moveApps === true;
+    $('keepApps').value = typeof settings.keepApps === 'string' ? settings.keepApps : DEFAULT_KEEP;
+    $('keepBox').hidden = !$('moveApps').checked;
+    $('moveApps').addEventListener('change', save);
+    $('keepApps').addEventListener('change', save);
     ws = new WebSocket('ws://127.0.0.1:' + port);
     ws.onopen = function () {
       ws.send(JSON.stringify({ event: registerEvent, uuid }));

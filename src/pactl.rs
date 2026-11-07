@@ -40,6 +40,27 @@ impl Kind {
             Kind::Input => "set-default-source",
         }
     }
+
+    fn short_list_args(self) -> [&'static str; 3] {
+        match self {
+            Kind::Output => ["list", "short", "sinks"],
+            Kind::Input => ["list", "short", "sources"],
+        }
+    }
+
+    fn streams_args(self) -> [&'static str; 2] {
+        match self {
+            Kind::Output => ["list", "sink-inputs"],
+            Kind::Input => ["list", "source-outputs"],
+        }
+    }
+
+    fn move_stream(self) -> &'static str {
+        match self {
+            Kind::Output => "move-sink-input",
+            Kind::Input => "move-source-output",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -96,8 +117,88 @@ impl AudioState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
-    SetDefault { kind: Kind, name: String },
+    SetDefault {
+        kind: Kind,
+        name: String,
+        /// Also move the apps that were playing (or recording) on the old
+        /// default, except those whose name contains one of `keep`.
+        move_apps: bool,
+        keep: Vec<String>,
+    },
     Refresh,
+}
+
+/// An app's playback or recording stream, from `pactl list sink-inputs`
+/// or `pactl list source-outputs`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stream {
+    pub id: u32,
+    /// The index of the sink or source it plays to or records from.
+    pub device: u32,
+    pub app: String,
+    pub binary: String,
+}
+
+impl Stream {
+    /// Whether the app matches a never-move entry (case-insensitive part
+    /// of its name or program name).
+    pub fn kept(&self, keep: &[String]) -> bool {
+        let app = self.app.to_lowercase();
+        let binary = self.binary.to_lowercase();
+        keep.iter()
+            .map(|k| k.trim().to_lowercase())
+            .filter(|k| !k.is_empty())
+            .any(|k| app.contains(&k) || binary.contains(&k))
+    }
+}
+
+/// Reads app streams from `pactl list sink-inputs` or `source-outputs`.
+pub fn parse_streams(text: &str) -> Vec<Stream> {
+    let mut streams = Vec::new();
+    let mut current: Option<Stream> = None;
+    for line in text.lines() {
+        let head = line
+            .strip_prefix("Sink Input #")
+            .or_else(|| line.strip_prefix("Source Output #"));
+        if let Some(id) = head {
+            streams.extend(current.take());
+            current = id.trim().parse().ok().map(|id| Stream {
+                id,
+                device: u32::MAX,
+                app: String::new(),
+                binary: String::new(),
+            });
+            continue;
+        }
+        let Some(st) = current.as_mut() else {
+            continue;
+        };
+        let line = line.trim_start();
+        let device = line
+            .strip_prefix("Sink: ")
+            .or_else(|| line.strip_prefix("Source: "));
+        if let Some(v) = device {
+            st.device = v.trim().parse().unwrap_or(u32::MAX);
+        } else if let Some((key, value)) = line.split_once(" = ") {
+            let value = value.trim().trim_matches('"').to_string();
+            match key {
+                "application.name" => st.app = value,
+                "application.process.binary" => st.binary = value,
+                _ => {}
+            }
+        }
+    }
+    streams.extend(current);
+    streams
+}
+
+/// Finds a device's index in `pactl list short sinks|sources` output.
+pub fn find_index(short: &str, name: &str) -> Option<u32> {
+    short.lines().find_map(|l| {
+        let mut cols = l.split('\t');
+        let index = cols.next()?.trim().parse().ok()?;
+        (cols.next()? == name).then_some(index)
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -328,8 +429,18 @@ impl Worker {
     }
 
     fn handle(&mut self, req: Request) {
-        if let Command::SetDefault { kind, name } = &req.command {
+        if let Command::SetDefault {
+            kind,
+            name,
+            move_apps,
+            keep,
+        } = &req.command
+        {
+            let old = self.state.default_device(*kind).to_string();
             let result = self.pactl(&[kind.set_default(), name]);
+            if result.is_ok() && *move_apps && !old.is_empty() && old != *name {
+                self.move_apps(*kind, &old, name, keep);
+            }
             let error = match result {
                 Ok(_) => None,
                 Err(PactlError::Missing) => Some("pactl is not installed".to_string()),
@@ -343,6 +454,31 @@ impl Worker {
             }
         }
         self.refresh();
+    }
+}
+
+impl Worker {
+    /// Moves the streams on `old` to `new`, skipping kept apps. Failures
+    /// are logged: the switch itself already worked.
+    fn move_apps(&self, kind: Kind, old: &str, new: &str, keep: &[String]) {
+        let Ok(short) = self.pactl(&kind.short_list_args()) else {
+            return;
+        };
+        let Some(old_index) = find_index(&short, old) else {
+            return;
+        };
+        let Ok(list) = self.pactl(&kind.streams_args()) else {
+            return;
+        };
+        for st in parse_streams(&list) {
+            if st.device != old_index || st.kept(keep) {
+                continue;
+            }
+            let id = st.id.to_string();
+            if let Err(PactlError::Failed(e)) = self.pactl(&[kind.move_stream(), &id, new]) {
+                (self.emit)(AudioEvent::Log(format!("moving {}: {e}", st.app)));
+            }
+        }
     }
 }
 
@@ -410,6 +546,45 @@ Cookie: 1234:abcd
                 "alsa_input.pci-0000_00_1f.3.analog-stereo".into()
             )
         );
+    }
+
+    #[test]
+    fn parses_streams_and_indexes() {
+        let list = "Sink Input #90
+\tDriver: PipeWire
+\tSink: 52
+\tProperties:
+\t\tmedia.name = \"Playback\"
+\t\tapplication.name = \"FreeRDP\"
+\t\tapplication.process.binary = \"xfreerdp3\"
+
+Sink Input #91
+\tSink: 47
+\tProperties:
+\t\tapplication.name = \"TeamSpeak 3\"
+\t\tapplication.process.binary = \"ts3client_linux_amd64\"
+";
+        let streams = parse_streams(list);
+        assert_eq!(
+            streams[0],
+            Stream {
+                id: 90,
+                device: 52,
+                app: "FreeRDP".into(),
+                binary: "xfreerdp3".into()
+            }
+        );
+        assert_eq!(streams[1].device, 47);
+        let keep = vec!["Zoom".to_string(), " teamspeak ".to_string(), String::new()];
+        assert!(!streams[0].kept(&keep));
+        assert!(streams[1].kept(&keep));
+        assert!(!streams[1].kept(&[]));
+
+        let short = "47\talsa_output.speakers\tPipeWire\ts32le 2ch 48000Hz\tSUSPENDED
+52\talsa_output.headset\tPipeWire\ts32le 2ch 48000Hz\tRUNNING
+";
+        assert_eq!(find_index(short, "alsa_output.headset"), Some(52));
+        assert_eq!(find_index(short, "alsa_output"), None);
     }
 
     #[test]

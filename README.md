@@ -25,6 +25,12 @@ There's also a **Find the same device after it is plugged back in** option, enab
 
 If you need a key to work only with one exact device, turn that option off.
 
+### What about apps that are already playing?
+
+By default, a key only changes the system default device. Apps set to "Default" follow it, and apps you've pointed at a specific device (like TeamSpeak or Zoom) stay where they are.
+
+Some apps keep playing on the old device anyway, such as an RDP client like Remmina or FreeRDP. For those, turn on **Also move apps that are playing on the old device** for that key. A press then also moves every app that was on the previous default to the new one. Apps on other devices are never touched, and anything on the **Never move these apps** list stays put. That list matches part of an app's name, and it starts as `TeamSpeak, Zoom, Discord`.
+
 ## Requirements
 
 - Linux on **x86_64** or **aarch64 (ARM64)**.

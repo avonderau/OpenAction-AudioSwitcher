@@ -27,14 +27,41 @@ list() {
     printf '%s #%d\n\tState: SUSPENDED\n\tName: %s\n\tDescription: %s\n\n' "$2" "$n" "$name" "$desc"
   done < "$d/$1"
 }
+short() {
+  n=0
+  while IFS='|' read -r name desc; do
+    n=$((n + 1))
+    printf '%d\t%s\tPipeWire\ts32le 2ch 48000Hz\tSUSPENDED\n' "$n" "$name"
+  done < "$d/$1"
+}
+index() {
+  short "$1" | awk -F'\t' -v name="$2" '$2 == name { print $1 }'
+}
+# Stream files hold "id|device name|application.name|binary" lines.
+streams() {
+  [ -e "$d/$1" ] || return 0
+  while IFS='|' read -r id dev app bin; do
+    printf '%s #%s\n\t%s: %s\n\tProperties:\n\t\tapplication.name = "%s"\n\t\tapplication.process.binary = "%s"\n\n' \
+      "$2" "$id" "$3" "$(index "$4" "$dev")" "$app" "$bin"
+  done < "$d/$1"
+}
 case "$1" in
   info)
     printf 'Server Name: fake\nDefault Sink: %s\nDefault Source: %s\n' "$(cat "$d/default_sink")" "$(cat "$d/default_source")" ;;
   list)
-    case "$2" in
-      sinks) list sinks Sink ;;
-      sources) list sources Source ;;
+    case "$2 $3" in
+      "sinks "*) list sinks Sink ;;
+      "sources "*) list sources Source ;;
+      "short sinks") short sinks ;;
+      "short sources") short sources ;;
+      "sink-inputs "*) streams sink_inputs 'Sink Input' Sink sinks ;;
+      "source-outputs "*) streams source_outputs 'Source Output' Source sources ;;
     esac ;;
+  move-sink-input|move-source-output)
+    f=sink_inputs
+    [ "$1" = move-source-output ] && f=source_outputs
+    awk -F'|' -v OFS='|' -v id="$2" -v dev="$3" '$1 == id { $2 = dev } 1' "$d/$f" > "$d/$f.new"
+    mv "$d/$f.new" "$d/$f" ;;
   set-default-sink|set-default-source)
     f=default_sink
     [ "$1" = set-default-source ] && f=default_source
