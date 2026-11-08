@@ -1,5 +1,5 @@
 // Settings page for the Audio Switcher Deck plugin (Stream Deck property
-// inspector API: the host calls connectElgatoStreamDeckSocket).
+// inspector API: the host calls connectOpenActionSocket or connectElgatoStreamDeckSocket).
 (function () {
   'use strict';
   const STATUS_TEXT = {
@@ -178,7 +178,7 @@
     if (!$('devices').contains(document.activeElement)) render(p);
   }
 
-  window.connectElgatoStreamDeckSocket = function (port, inUUID, registerEvent, info, actionInfo) {
+  window.connectOpenActionSocket = function (port, inUUID, registerEvent, info, actionInfo) {
     uuid = inUUID;
     try {
       const a = JSON.parse(actionInfo || '{}');
@@ -209,7 +209,8 @@
       }
     };
   };
-  window.connectSocket = window.connectElgatoStreamDeckSocket;
+  window.connectElgatoStreamDeckSocket = window.connectOpenActionSocket;
+  window.connectSocket = window.connectOpenActionSocket;
 
   $('refresh').addEventListener('click', function () {
     send('sendToPlugin', { type: 'refresh' });

@@ -24,6 +24,7 @@
       "Name": "Output device",
       "Tooltip": "Switch speakers or headphones: one device, or cycle through several",
       "Icon": "imgs/output-off",
+      "DisableAutomaticStates": true,
       "Controllers": [
         "Keypad"
       ],
@@ -41,6 +42,7 @@
       "Name": "Input device",
       "Tooltip": "Switch microphones: one device, or cycle through several",
       "Icon": "imgs/input-off",
+      "DisableAutomaticStates": true,
       "Controllers": [
         "Keypad"
       ],

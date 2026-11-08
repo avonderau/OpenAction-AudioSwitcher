@@ -3,6 +3,15 @@
 version = 3
 
 [[package]]
+name = "audioswitcher"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tungstenite",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -276,15 +285,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "audioswitcher"
-version = "0.1.1"
-dependencies = [
- "serde",
- "serde_json",
- "tungstenite",
 ]
 
 [[package]]
